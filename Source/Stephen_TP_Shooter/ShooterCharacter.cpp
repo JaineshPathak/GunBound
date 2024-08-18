@@ -25,6 +25,7 @@
 
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerState.h"
 
 #include "DrawDebugHelpers.h"
 #include "Perception/AISense_Hearing.h"
@@ -167,6 +168,44 @@ float AShooterCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Dama
 	DetermineStunChance();
 
 	return DamageAmount;
+}
+
+void AShooterCharacter::ProcessDamageBasic_Implementation(const float& DamageAmount, AActor* Shooter, AController* ShooterController)
+{
+	if(BloodParticles)
+		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), BloodParticles, GetActorLocation());
+
+	UGameplayStatics::ApplyDamage(this, DamageAmount, ShooterController, Shooter, UDamageType::StaticClass());
+}
+
+bool AShooterCharacter::HasDied_Implementation()
+{
+	if (HealthComponent == nullptr) return false;
+
+	return HealthComponent->IsDead();
+}
+
+void AShooterCharacter::AddScore_Implementation(const float& ScoreAmount)
+{
+	auto& ShooterPlayerState = *GetPlayerState();
+	const float ShooterWeaponDmgMultiplier = InventoryComponent->GetEquippedWeapon()->GetDamageMultiplier();
+
+	float OldScore = ShooterPlayerState.GetScore();
+	OldScore += ScoreAmount * ShooterWeaponDmgMultiplier;
+
+	ShooterPlayerState.SetScore(OldScore);
+}
+
+FVector AShooterCharacter::GetShooterLocation_Implementation()
+{
+	return GetActorLocation();
+}
+
+bool AShooterCharacter::ProcessPowerup_Implementation()
+{
+	if (!HealthComponent || HealthComponent->IsDead()) return false;
+	
+	return true;
 }
 
 // Called when the game starts or when spawned

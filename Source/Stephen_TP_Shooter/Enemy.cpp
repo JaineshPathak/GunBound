@@ -2,13 +2,14 @@
 
 
 #include "Enemy.h"
+#include "IShooterActions.h"
 #include "EnemyController.h"
-#include "HealthComponent.h"
+#include "EnemyManagerSubsystem.h"
 #include "SoundsDataAsset.h"
 #include "ShooterCharacter.h"
-#include "ShooterGameState.h"
-#include "EnemyManagerSubsystem.h"
+#include "HealthComponent.h"
 #include "InventoryComponent.h"
+#include "ShooterGameState.h"
 #include "Weapon.h"
 
 #include "DrawDebugHelpers.h"
@@ -39,11 +40,7 @@ AEnemy::AEnemy() :
 	bAttacking(false),
 	BaseDamage(20.0f),
 	LeftWeaponSocket(TEXT("FX_Trail_L_01")),
-	RightWeaponSocket(TEXT("FX_Trail_R_01")),
-	AttackLSlow(TEXT("Attack_L")),
-	AttackRSlow(TEXT("Attack_R")),
-	AttackLFast(TEXT("Attack_L_Fast")),
-	AttackRFast(TEXT("Attack_R_Fast"))
+	RightWeaponSocket(TEXT("FX_Trail_R_01"))
 {
  	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
@@ -62,6 +59,11 @@ AEnemy::AEnemy() :
 
 	AudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("EnemyAudioComponent"));
 	AudioComponent->SetupAttachment(GetRootComponent());
+
+	AttackSectionNames[0] = TEXT("Attack_L");
+	AttackSectionNames[1] = TEXT("Attack_R");
+	AttackSectionNames[2] = TEXT("Attack_L_Fast");
+	AttackSectionNames[3] = TEXT("Attack_R_Fast");
 }
 
 // Called when the game starts or when spawned
@@ -103,8 +105,7 @@ void AEnemy::BeginPlay()
 	const FVector WorldPatrolPoint = UKismetMathLibrary::TransformLocation(GetActorTransform(), PatrolPoint);
 	const FVector WorldPatrolPoint2 = UKismetMathLibrary::TransformLocation(GetActorTransform(), PatrolPoint2);
 
-	EnemyController = Cast<AEnemyController>(GetController());
-	if (EnemyController)
+	if (EnemyController = Cast<AEnemyController>(GetController()))
 	{
 		EnemyController->GetBlackboardComponent()->SetValueAsVector(TEXT("PatrolPoint"), WorldPatrolPoint);
 		EnemyController->GetBlackboardComponent()->SetValueAsVector(TEXT("PatrolPoint2"), WorldPatrolPoint2);
@@ -147,8 +148,6 @@ void AEnemy::OnDeath(AActor* InstigatorActor, AController* InstigatorController)
 	GetMesh()->HideBoneByName(FName("weapon_l"), EPhysBodyOp::PBO_None);
 	GetMesh()->HideBoneByName(FName("weapon_r"), EPhysBodyOp::PBO_None);
 
-	//if (DeathSound)
-		//UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation());
 	PlayTheSound("DeathSound", false, false, 1.0f);
 
 	if (EnemyController)
@@ -198,7 +197,12 @@ void AEnemy::PlayHitMontage(FName MontageSection, float PlayRate)
 	}
 }
 
-void AEnemy::PlayAttackMontage(FName MontageSection, float PlayRate)
+FName AEnemy::GetAttackSectionName_Implementation()
+{
+	return AttackSectionNames[FMath::RandRange(0, 3)];
+}
+
+void AEnemy::PlayAttack_Implementation(FName MontageSection, float PlayRate)
 {
 	if (!bInAttackRange) return;
 
@@ -213,31 +217,14 @@ void AEnemy::PlayAttackMontage(FName MontageSection, float PlayRate)
 	PlayTheSound("AxeSwingSound", false, false, 1.0f);
 }
 
-FName AEnemy::GetAttackSectionName()
+bool AEnemy::IsTargetDead_Implementation()
 {
-	const int32 SectionRandIndex = FMath::RandRange(1, 4);
-	FName SectionName;
+	if (EnemyController == nullptr) return false;
 
-	switch (SectionRandIndex)
-	{
-	case 1:
-		SectionName = AttackLSlow;
-		break;
-	case 2:
-		SectionName = AttackRSlow;
-		break;
-	case 3:
-		SectionName = AttackLFast;
-		break;
-	case 4:
-		SectionName = AttackRFast;
-		break;
-	default:
-		SectionName = AttackLSlow;
-		break;
-	}
+	if (auto ShooterTarget = Cast<IShooterActions>(EnemyController->GetBlackboardComponent()->GetValueAsObject("Target")))
+		return ShooterTarget->HasDied_Implementation();
 
-	return SectionName;
+	return false;
 }
 
 void AEnemy::StoreHitNumber(UUserWidget* HitNumberWidget, FVector Location)
@@ -318,8 +305,7 @@ void AEnemy::CombatRangeSphereOverlapBegin(UPrimitiveComponent* OverlappedCompon
 {
 	if (OtherActor == nullptr) return;
 
-	auto Character = Cast<AShooterCharacter>(OtherActor);
-	if (Character)
+	if (auto Character = Cast<IShooterActions>(OtherActor))
 	{
 		SetCanMove(true);
 
@@ -334,8 +320,7 @@ void AEnemy::CombatRangeSphereOverlapEnd(UPrimitiveComponent* OverlappedComponen
 {
 	if (OtherActor == nullptr) return;
 
-	auto Character = Cast<AShooterCharacter>(OtherActor);
-	if (Character)
+	if (auto Character = Cast<IShooterActions>(OtherActor))
 	{
 		bInAttackRange = false;
 
@@ -344,95 +329,16 @@ void AEnemy::CombatRangeSphereOverlapEnd(UPrimitiveComponent* OverlappedComponen
 	}
 }
 
-void AEnemy::DoDamage(AShooterCharacter* VictimActor)
-{
-	if (VictimActor == nullptr) return;
-
-	UGameplayStatics::ApplyDamage(VictimActor, BaseDamage, EnemyController, this, UDamageType::StaticClass());
-}
-
-void AEnemy::SpawnBlood(AShooterCharacter* VictimActor, FName SocketName)
-{
-	if (VictimActor == nullptr) return;
-
-	const USkeletalMeshSocket* TipSocket = GetMesh()->GetSocketByName(SocketName);
-	if (TipSocket)
-	{
-		const FTransform SocketTransform = TipSocket->GetSocketTransform(GetMesh());
-		if (VictimActor->GetBloodParticles())
-			UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), VictimActor->GetBloodParticles(), SocketTransform);
-	}
-}
-
-void AEnemy::SpawnBlood(AShooterCharacter* VictimActor, FVector SpawnLoc)
-{
-	if (VictimActor == nullptr) return;
-
-	if (VictimActor->GetBloodParticles())
-		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), VictimActor->GetBloodParticles(), SpawnLoc);
-}
-
 void AEnemy::OnLeftWeaponOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	auto Character = Cast<AShooterCharacter>(OtherActor);
-	if (Character)
-	{
-		DoDamage(Character);
-		SpawnBlood(Character, Character->GetActorLocation());
-	}
+	if (auto CharacterDamagable = Cast<IDamageable>(OtherActor))
+		CharacterDamagable->ProcessDamageBasic_Implementation(BaseDamage, this, EnemyController);
 }
 
 void AEnemy::OnRightWeaponOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	auto Character = Cast<AShooterCharacter>(OtherActor);
-	if (Character)
-	{
-		DoDamage(Character);
-		SpawnBlood(Character, Character->GetActorLocation());
-	}
-}
-
-void AEnemy::ActivateWeaponLeft()
-{
-	if (LeftWeaponCollisionBox == nullptr) 
-		return;
-
-	LeftWeaponCollisionBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-}
-
-void AEnemy::DeactivateWeaponLeft()
-{
-	if (LeftWeaponCollisionBox == nullptr) 
-		return;
-
-	LeftWeaponCollisionBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-}
-
-void AEnemy::ActivateWeaponRight()
-{
-	if (RightWeaponCollisionBox == nullptr) 
-		return;
-
-	RightWeaponCollisionBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-}
-
-void AEnemy::DeactivateWeaponRight()
-{
-	if (RightWeaponCollisionBox == nullptr) 
-		return;
-
-	RightWeaponCollisionBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-}
-
-void AEnemy::DetermineStunChance()
-{
-	const float StunningChance = FMath::FRandRange(0.0f, 1.0f);
-	if (StunningChance <= StunChance)
-	{
-		SetStunned(true);
-		PlayHitMontage("HitReactFront");
-		PlayTheSound("StunSound", true, false, 1.0f);
-	}
+	if (auto CharacterDamagable = Cast<IDamageable>(OtherActor))
+		CharacterDamagable->ProcessDamageBasic_Implementation(BaseDamage, this, EnemyController);
 }
 
 void AEnemy::DetectPlayer(AActor* OtherActor)
@@ -441,14 +347,14 @@ void AEnemy::DetectPlayer(AActor* OtherActor)
 	if (EnemyController == nullptr) return;
 	if (HealthComponent == nullptr || HealthComponent->IsDead()) return;
 
-	if (auto Character = Cast<AShooterCharacter>(OtherActor))
+	if (auto Character = Cast<IShooterActions>(OtherActor))
 	{
 		SetInvestigating(false);
 
 		//Set value of 'Target' Blackboard Key
 		if (!bGreetedPlayer)
 		{
-			EnemyController->GetBlackboardComponent()->SetValueAsObject(TEXT("Target"), Character);
+			EnemyController->GetBlackboardComponent()->SetValueAsObject(TEXT("Target"), OtherActor);
 			bGreetedPlayer = true;
 
 			if (FMath::FRand() <= 0.6f)
@@ -467,12 +373,10 @@ void AEnemy::DetectPlayer(AActor* OtherActor)
 
 void AEnemy::InvestigateNoiseLocation(const FVector& NoiseLocation)
 {
-	if (HealthComponent->IsDead()) return;
+	if (HealthComponent && HealthComponent->IsDead()) return;
 	if (EnemyController == nullptr) return;
 	if (FMath::IsNearlyEqual(NoiseLocation.Size(), 0.01)) return;
-
-	auto Target = Cast<AShooterCharacter>(EnemyController->GetBlackboardComponent()->GetValueAsObject("Target"));
-	if (Target) return;
+	if (EnemyController->GetBlackboardComponent()->GetValueAsObject("Target")) return;
 
 	SetInvestigating(true);
 	SetCanMove(true);
@@ -480,7 +384,6 @@ void AEnemy::InvestigateNoiseLocation(const FVector& NoiseLocation)
 	EnemyController->GetBlackboardComponent()->SetValueAsVector("InvestigateLocation", NoiseLocation);
 }
 
-// Called every frame
 void AEnemy::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -505,18 +408,17 @@ void AEnemy::PlayTheSound(const FString& SoundName, bool bFadeIn, bool bFadeOut,
 		AudioComponent->Play();
 }
 
-FVector AEnemy::GetTargetLocation() const
+FVector AEnemy::GetEnemyTargetLocation() const
 {
 	if (!bGreetedPlayer || EnemyController == nullptr) return FVector::ZeroVector;
 
-	if (auto Character = Cast<AShooterCharacter>(EnemyController->GetBlackboardComponent()->GetValueAsObject(TEXT("Target"))))
-		if (Character->GetMesh())
-			return Character->GetActorLocation();
+	if (auto Character = Cast<IShooterActions>(EnemyController->GetBlackboardComponent()->GetValueAsObject(TEXT("Target"))))
+		return Character->GetShooterLocation_Implementation();
 
 	return FVector::ZeroVector;
 }
 
-void AEnemy::BulletHit_Implementation(FHitResult HitResult, const FBulletHitData& BulletHitData, AActor* Shooter, AController* ShooterController)
+void AEnemy::ProcessDamage_Implementation(const FHitResult& HitResult, const float& DamageAmount, AActor* Shooter, AController* ShooterController)
 {
 	PlayTheSound("BulletHitSound", false, false, 2.0f);
 
@@ -524,10 +426,92 @@ void AEnemy::BulletHit_Implementation(FHitResult HitResult, const FBulletHitData
 		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ImpactParticles, HitResult.Location, FRotator(0.0f), true);
 
 	bool bHeadshot = (HitResult.BoneName.ToString() == HeadBone);
-	float HitDamage = bHeadshot ? BulletHitData.HeadshotDamage : BulletHitData.BodyDamage;
+	ShowHitNumber((int32)DamageAmount, HitResult.Location, bHeadshot);
 
-	UGameplayStatics::ApplyDamage(this, HitDamage, ShooterController, Shooter, UDamageType::StaticClass());
-	ShowHitNumber((int32)HitDamage, HitResult.Location, bHeadshot);
+	UGameplayStatics::ApplyDamage(this, DamageAmount, ShooterController, Shooter, UDamageType::StaticClass());
+}
+
+void AEnemy::JumpToDestination_Implementation(FVector Destination)
+{
+	if (HealthComponent == nullptr || HealthComponent->IsDead()) return;
+
+	const FVector StartPos = GetActorLocation();
+	FVector EndPos = Destination;
+	EndPos.Z += 250.0f;
+
+	FVector LaunchVelocity = FVector::ZeroVector;
+	UGameplayStatics::SuggestProjectileVelocity_CustomArc(this, LaunchVelocity, StartPos, EndPos);
+
+	PlayTheSound("JumpSound", true, false, 1.0f);
+
+	LaunchCharacter(LaunchVelocity, true, true);
+}
+
+void AEnemy::ApplyStun_Implementation()
+{
+	const float StunningChance = FMath::FRandRange(0.0f, 1.0f);
+	if (StunningChance <= StunChance)
+	{
+		SetStunnedStatus_Implementation(true);
+		PlayHitMontage("HitReactFront");
+		PlayTheSound("StunSound", true, false, 1.0f);
+	}
+}
+
+void AEnemy::SetStunnedStatus_Implementation(bool IsStunned)
+{
+	if (HealthComponent == nullptr || HealthComponent->IsDead()) return;
+	if (EnemyController == nullptr) return;
+
+	bStunned = IsStunned;
+
+	if (bStunned) SetAttackingStatus_Implementation(false);
+
+	EnemyController->GetBlackboardComponent()->SetValueAsBool(TEXT("Stunned"), bStunned);
+
+	SetCanMoveStatus_Implementation(true);
+}
+
+void AEnemy::SetAttackingStatus_Implementation(bool IsAttacking)
+{
+	if (HealthComponent == nullptr || HealthComponent->IsDead()) return;
+	if (EnemyController == nullptr) return;
+
+	if (!bCanMove) SetCanMoveStatus_Implementation(true);
+
+	bAttacking = IsAttacking;
+	EnemyController->GetBlackboardComponent()->SetValueAsBool(TEXT("Attacking"), bAttacking);
+}
+
+void AEnemy::SetCanMoveStatus_Implementation(bool CanMove)
+{
+	if (HealthComponent == nullptr || HealthComponent->IsDead()) return;
+	if (EnemyController == nullptr) return;
+
+	bCanMove = CanMove;
+	EnemyController->GetBlackboardComponent()->SetValueAsBool(TEXT("CanMove"), bCanMove);
+}
+
+void AEnemy::SetInvestigatingStatus_Implementation(bool Investigate)
+{
+	if (HealthComponent == nullptr || HealthComponent->IsDead()) return;
+	if (EnemyController == nullptr) return;
+
+	EnemyController->GetBlackboardComponent()->SetValueAsBool(TEXT("IsInvestigating"), Investigate);
+}
+
+void AEnemy::SetWeaponLeftStatus_Implementation(bool Activate)
+{
+	if (LeftWeaponCollisionBox == nullptr) return;
+
+	LeftWeaponCollisionBox->SetCollisionEnabled(Activate ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+}
+
+void AEnemy::SetWeaponRightStatus_Implementation(bool Activate)
+{
+	if (RightWeaponCollisionBox == nullptr) return;
+
+	RightWeaponCollisionBox->SetCollisionEnabled(Activate ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
 }
 
 float AEnemy::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -536,15 +520,10 @@ float AEnemy::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AC
 
 	HealthComponent->OnTakeDamage(DamageAmount, DamageCauser, EventInstigator);
 
-	if (auto ShooterCharacter = Cast<AShooterCharacter>(DamageCauser))
+	if (auto ShooterCharacter = Cast<IShooterActions>(DamageCauser))
 	{
-		auto& ShooterPlayerState = *ShooterCharacter->GetPlayerState();
-		const float ShooterWeaponDmgMultiplier = ShooterCharacter->GetInventoryComponent()->GetEquippedWeapon()->GetDamageMultiplier();
-
-		float NewScore = ShooterPlayerState.GetScore();
-		NewScore += (0.75f * DamageAmount) + ((ShooterGameState != nullptr) ? ShooterGameState->GetCurrentWave() : 1.0f) * ShooterWeaponDmgMultiplier;
-
-		ShooterPlayerState.SetScore(NewScore);
+		float NewScore = (0.75f * DamageAmount) + ((ShooterGameState != nullptr) ? ShooterGameState->GetCurrentWave() : 1.0f);
+		ShooterCharacter->AddScore_Implementation(NewScore);
 	}
 
 	if(EnemyManager && EnemyManager->OnEnemyHitDelegate.IsBound())
@@ -561,7 +540,7 @@ float AEnemy::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AC
 	if (HealthComponent->IsDead()) return DamageAmount;
 
 	ShowHealthBarEvent();
-	DetermineStunChance();
+	ApplyStun_Implementation();
 
 	return DamageAmount;
 }

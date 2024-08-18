@@ -4,7 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
-#include "BulletHitInterface.h"
+#include "IPawnActions.h"
+#include "IEnemyPawnActions.h"
+#include "IDamageable.h"
 #include "Enemy.generated.h"
 
 class UParticleSystem;
@@ -22,7 +24,7 @@ class AShooterGameState;
 class UEnemyManagerSubsystem;
 
 UCLASS()
-class STEPHEN_TP_SHOOTER_API AEnemy : public ACharacter, public IBulletHitInterface
+class STEPHEN_TP_SHOOTER_API AEnemy : public ACharacter, public IDamageable, public IPawnActions, public IEnemyPawnActions
 {
 	GENERATED_BODY()
 
@@ -31,8 +33,25 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-
 	virtual void Tick(float DeltaTime) override;
+	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+	
+	virtual void ProcessDamage_Implementation(const FHitResult& HitResult, const float& DamageAmount, AActor* Shooter, AController* ShooterController);
+	
+	virtual void JumpToDestination_Implementation(FVector Destination) override;
+	virtual void ApplyStun_Implementation() override;
+
+	virtual void SetStunnedStatus_Implementation(bool IsStunned) override;
+	virtual void SetAttackingStatus_Implementation(bool IsAttacking) override;
+	virtual void SetCanMoveStatus_Implementation(bool CanMove) override;
+	virtual void SetInvestigatingStatus_Implementation(bool Investigate) override;
+	virtual void SetWeaponLeftStatus_Implementation(bool Activate) override;
+	virtual void SetWeaponRightStatus_Implementation(bool Activate) override;
+	virtual FName GetAttackSectionName_Implementation() override;
+	virtual void PlayAttack_Implementation(FName MontageSection, float PlayRate = 1.0f) override;
+	virtual bool IsTargetDead_Implementation() override;
+
+	void UpdateHitNumbers();
 
 	UFUNCTION(BlueprintNativeEvent)
 	void ShowHealthBarEvent();
@@ -50,18 +69,10 @@ protected:
 	void PlayHitMontage(FName MontageSection, float PlayRate = 1.0f);
 
 	UFUNCTION(BlueprintCallable)
-	void PlayAttackMontage(FName MontageSection, float PlayRate = 1.0f);
-
-	UFUNCTION(BlueprintPure)
-	FName GetAttackSectionName();
-
-	UFUNCTION(BlueprintCallable)
 	void StoreHitNumber(UUserWidget* HitNumberWidget, FVector Location);
 
 	UFUNCTION()
 	void DestroyHitNumber(UUserWidget* HitNumberWidget);
-
-	void UpdateHitNumbers();
 
 	UFUNCTION(BlueprintCallable)
 	void SetStunned(bool IsStunned);
@@ -87,32 +98,11 @@ protected:
 	UFUNCTION()
 	void OnRightWeaponOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
-	//Activate/Deactivate Left Weapon Collision (Called from Anim Montage Notifies)
-	UFUNCTION(BlueprintCallable)
-	void ActivateWeaponLeft();
-
-	//Activate/Deactivate Left Weapon Collision (Called from Anim Montage Notifies)
-	UFUNCTION(BlueprintCallable)
-	void DeactivateWeaponLeft();
-
-	//Activate/Deactivate Right Weapon Collision (Called from Anim Montage Notifies)
-	UFUNCTION(BlueprintCallable)
-	void ActivateWeaponRight();
-
-	//Activate/Deactivate Right Weapon Collision (Called from Anim Montage Notifies)
-	UFUNCTION(BlueprintCallable)
-	void DeactivateWeaponRight();
-
 	UFUNCTION()
 	void OnDeath(AActor* InstigatorActor, AController* InstigatorController);
 
 	UFUNCTION(BlueprintCallable)
 	void InvestigateNoiseLocation(const FVector& NoiseLocation);
-
-	void DetermineStunChance();
-	void DoDamage(AShooterCharacter* VictimActor);
-	void SpawnBlood(AShooterCharacter* VictimActor, FName SocketName);
-	void SpawnBlood(AShooterCharacter* VictimActor, FVector SpawnLoc);
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character", meta = (AllowPrivateAccess = "true"))
@@ -231,10 +221,7 @@ private:
 	TObjectPtr<AEnemyController> EnemyController;
 
 	//Section names of Attack Montage Names
-	FName AttackLSlow;
-	FName AttackRSlow;
-	FName AttackLFast;
-	FName AttackRFast;
+	FName AttackSectionNames[4];
 
 	FTimerHandle HeathBarHideTimerHandle;
 	FTimerHandle HitReactTimer;
@@ -251,13 +238,10 @@ public:
 	void DetectPlayer(AActor* OtherActor);
 
 	UFUNCTION(BlueprintCallable)
-	FVector GetTargetLocation() const;
+	FVector GetEnemyTargetLocation() const;
 
 	UFUNCTION(BlueprintCallable)
 	FORCEINLINE bool IsAttacking() const { return bAttacking; }
-
-	virtual void BulletHit_Implementation(FHitResult HitResult, const FBulletHitData& BulletHitData, AActor* Shooter, AController* ShooterController) override;
-	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 	FORCEINLINE bool HasGreetedPlayer() const { return bGreetedPlayer; }
 	FORCEINLINE FString GetHeadBone() const { return HeadBone; }

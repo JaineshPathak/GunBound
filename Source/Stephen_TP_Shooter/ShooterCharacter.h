@@ -4,6 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "IPawnActions.h"
+#include "IShooterActions.h"
+#include "IDamageable.h"
 #include "AmmoType.h"
 #include "ShooterCharacter.generated.h"
 
@@ -64,7 +67,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FHighlightIconDelegate, int32, Slot
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnShooterDeathDelegate);
 
 UCLASS()
-class STEPHEN_TP_SHOOTER_API AShooterCharacter : public ACharacter
+class STEPHEN_TP_SHOOTER_API AShooterCharacter : public ACharacter, public IDamageable, public IShooterActions
 {
 	GENERATED_BODY()
 
@@ -80,6 +83,13 @@ public:
 	virtual void Landed(const FHitResult& Hit) override;
 
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+
+	virtual void ProcessDamageBasic_Implementation(const float& DamageAmount, AActor* Shooter, AController* ShooterController);
+
+	virtual bool HasDied_Implementation() override;
+	virtual void AddScore_Implementation(const float& ScoreAmount) override;
+	virtual FVector GetShooterLocation_Implementation() override;
+	virtual bool ProcessPowerup_Implementation() override;
 
 protected:
 	UFUNCTION(BlueprintCallable)

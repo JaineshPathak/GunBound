@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "BulletHitInterface.h"
+#include "IDamageable.h"
 #include "Explosive.generated.h"
 
 class UParticleSystem;
@@ -14,7 +14,7 @@ class UStaticMeshComponent;
 class URadialForceComponent;
 
 UCLASS()
-class STEPHEN_TP_SHOOTER_API AExplosive : public AActor, public IBulletHitInterface
+class STEPHEN_TP_SHOOTER_API AExplosive : public AActor, public IDamageable
 {
 	GENERATED_BODY()
 	
@@ -56,6 +56,6 @@ private:
 	float ExplosionImpulse;
 
 public:	
-	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
-	virtual void BulletHit_Implementation(FHitResult HitResult, const FBulletHitData& BulletHitData, AActor* Shooter, AController* ShooterController) override;
+	virtual void ProcessDamageBasic_Implementation(const float& DamageAmount, AActor* Shooter, AController* ShooterController);
+	//virtual void BulletHit_Implementation(FHitResult HitResult, const FBulletHitData& BulletHitData, AActor* Shooter, AController* ShooterController) override;
 };

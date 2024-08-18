@@ -55,14 +55,7 @@ void AExplosive::Explode(AActor* Shooter, AController* ShooterController)
 	Destroy();
 }
 
-float AExplosive::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
-{
-	//Explode(DamageCauser, EventInstigator);
-
-	return DamageAmount;
-}
-
-void AExplosive::BulletHit_Implementation(FHitResult HitResult, const FBulletHitData& BulletHitData, AActor* Shooter, AController* ShooterController)
+void AExplosive::ProcessDamageBasic_Implementation(const float& DamageAmount, AActor* Shooter, AController* ShooterController)
 {
 	Explode(Shooter, ShooterController);
 }

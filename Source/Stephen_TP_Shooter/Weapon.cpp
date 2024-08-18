@@ -6,6 +6,7 @@
 #include "ShooterCharacter.h"
 #include "ShooterPlayerController.h"
 #include "BulletHitInterface.h"
+#include "IDamageable.h"
 
 #include "Perception/AISense_Hearing.h"
 #include "Particles/ParticleSystemComponent.h"
@@ -314,8 +315,8 @@ void AWeapon::FireBullet()
 		//Does Hit Actor implement Bullet Hit Interface?
 		if (TraceHitResult.GetActor())
 		{
-			if (IBulletHitInterface* HitInterface = Cast<IBulletHitInterface>(TraceHitResult.GetActor()))
-				HitInterface->BulletHit_Implementation(TraceHitResult, BulletHitData, Character, Character->GetController());
+			if (auto DamageableActor = Cast<IDamageable>(TraceHitResult.GetActor()))
+				DamageableActor->ProcessDamage_Implementation(TraceHitResult, Damage, Character, Character->GetController());
 			else
 			{
 				if (BulletWallHitEffect != nullptr)
